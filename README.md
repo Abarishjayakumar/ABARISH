@@ -1,1107 +1,449 @@
-# ABARISH
-shopping is available with cash on delivery
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
-
-import java.io.*;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
-import java.util.*;
-
-public class JRAShops {
-
-    static List<Product> products = new ArrayList<>();
-    static List<CartItem> cart = new ArrayList<>();
-
-    public static void main(String[] args) throws Exception {
-
-        // Sample products
-        products.add(new Product(
-                1,
-                "Smart Watch",
-                "Bluetooth Smart Watch",
-                1499,
-                20,
-                "https://via.placeholder.com/250"
-        ));
-
-        products.add(new Product(
-                2,
-                "Wireless Headphones",
-                "High quality wireless headphones",
-                1999,
-                15,
-                "https://via.placeholder.com/250"
-        ));
-
-        HttpServer server =
-                HttpServer.create(
-                        new InetSocketAddress(8080),
-                        0
-                );
-
-        server.createContext("/api/products",
-                JRAShops::products);
-
-        server.createContext("/api/add-product",
-                JRAShops::addProduct);
-
-        server.createContext("/api/cart",
-                JRAShops::cart);
-
-        server.createContext("/api/order",
-                JRAShops::order);
-
-        server.start();
-
-        System.out.println("--------------------------------");
-        System.out.println("       JRA SHOPS");
-        System.out.println("--------------------------------");
-        System.out.println(
-                "Server running at http://localhost:8080"
-        );
-    }
-
-    // GET products
-    static void products(HttpExchange exchange)
-            throws IOException {
-
-        if (!exchange.getRequestMethod().equals("GET")) {
-            send(exchange, "Method Not Allowed", 405);
-            return;
-        }
-
-        StringBuilder json = new StringBuilder("[");
-        boolean first = true;
-
-        for (Product p : products) {
-
-            if (!first) {
-                json.append(",");
-            }
-
-            json.append(p.toJson());
-            first = false;
-        }
-
-        json.append("]");
-
-        sendJson(exchange, json.toString());
-    }
-
-    // Add new product
-    static void addProduct(HttpExchange exchange)
-            throws IOException {
-
-        if (!exchange.getRequestMethod().equals("POST")) {
-            send(exchange, "Method Not Allowed", 405);
-            return;
-        }
-
-        String body = readBody(exchange);
-
-        try {
-
-            String name =
-                    getValue(body, "name");
-
-            String description =
-                    getValue(body, "description");
-
-            double price =
-                    Double.parseDouble(
-                            getValue(body, "price")
-                    );
-
-            int stock =
-                    Integer.parseInt(
-                            getValue(body, "stock")
-                    );
-
-            String image =
-                    getValue(body, "image")
-                            .replace("\\/", "/");
-
-            int id = products.size() + 1;
-
-            Product product =
-                    new Product(
-                            id,
-                            name,
-                            description,
-                            price,
-                            stock,
-                            image
-                    );
-
-            products.add(product);
-
-            sendJson(
-                    exchange,
-                    "{\"message\":\"Product added successfully\"}"
-            );
-
-        } catch (Exception e) {
-
-            sendJson(
-                    exchange,
-                    "{\"message\":\"Invalid product data\"}"
-            );
-        }
-    }
-
-    // Cart
-    static void cart(HttpExchange exchange)
-            throws IOException {
-
-        if (exchange.getRequestMethod().equals("POST")) {
-
-            String body = readBody(exchange);
-
-            try {
-
-                int productId =
-                        Integer.parseInt(
-                                getValue(body, "productId")
-                        );
-
-                int quantity =
-                        Integer.parseInt(
-                                getValue(body, "quantity")
-                        );
-
-                Product product = null;
-
-                for (Product p : products) {
-
-                    if (p.id == productId) {
-                        product = p;
-                        break;
-                    }
-                }
-
-                if (product == null) {
-
-                    sendJson(
-                            exchange,
-                            "{\"message\":\"Product not found\"}"
-                    );
-
-                    return;
-                }
-
-                cart.add(
-                        new CartItem(
-                                product,
-                                quantity
-                        )
-                );
-
-                sendJson(
-                        exchange,
-                        "{\"message\":\"Added to cart\"}"
-                );
-
-            } catch (Exception e) {
-
-                sendJson(
-                        exchange,
-                        "{\"message\":\"Invalid request\"}"
-                );
-            }
-
-        } else {
-
-            StringBuilder json =
-                    new StringBuilder("[");
-
-            boolean first = true;
-
-            for (CartItem item : cart) {
-
-                if (!first) {
-                    json.append(",");
-                }
-
-                json.append(item.toJson());
-
-                first = false;
-            }
-
-            json.append("]");
-
-            sendJson(exchange, json.toString());
-        }
-    }
-
-    // Order
-    static void order(HttpExchange exchange)
-            throws IOException {
-
-        if (!exchange.getRequestMethod().equals("POST")) {
-
-            send(exchange, "Method Not Allowed", 405);
-
-            return;
-        }
-
-        if (cart.isEmpty()) {
-
-            sendJson(
-                    exchange,
-                    "{\"message\":\"Cart is empty\"}"
-            );
-
-            return;
-        }
-
-        double total = 0;
-
-        for (CartItem item : cart) {
-
-            total +=
-                    item.product.price *
-                    item.quantity;
-        }
-
-        cart.clear();
-
-        sendJson(
-                exchange,
-                "{\"message\":\"Order placed successfully\","
-                        + "\"total\":" + total + "}"
-        );
-    }
-
-    static String readBody(HttpExchange exchange)
-            throws IOException {
-
-        InputStream input =
-                exchange.getRequestBody();
-
-        return new String(
-                input.readAllBytes(),
-                StandardCharsets.UTF_8
-        );
-    }
-
-    static String getValue(
-            String json,
-            String key) {
-
-        String search =
-                "\"" + key + "\"";
-
-        int start =
-                json.indexOf(search);
-
-        if (start == -1)
-            return "";
-
-        start =
-                json.indexOf(":",
-                        start) + 1;
-
-        while (
-                start < json.length()
-                        &&
-                (json.charAt(start) == ' '
-                        ||
-                 json.charAt(start) == '"')
-        ) {
-            start++;
-        }
-
-        int end;
-
-        if (json.charAt(start - 1) == '"') {
-
-            end =
-                    json.indexOf(
-                            "\"",
-                            start
-                    );
-
-        } else {
-
-            end =
-                    json.indexOf(
-                            ",",
-                            start
-                    );
-
-            if (end == -1) {
-                end =
-                        json.indexOf(
-                                "}",
-                                start
-                        );
-            }
-        }
-
-        return json.substring(
-                start,
-                end
-        ).trim();
-    }
-
-    static void sendJson(
-            HttpExchange exchange,
-            String response)
-            throws IOException {
-
-        exchange.getResponseHeaders()
-                .set(
-                        "Content-Type",
-                        "application/json"
-                );
-
-        send(exchange, response, 200);
-    }
-
-    static void send(
-            HttpExchange exchange,
-            String response,
-            int code)
-            throws IOException {
-
-        byte[] data =
-                response.getBytes(
-                        StandardCharsets.UTF_8
-                );
-
-        exchange.sendResponseHeaders(
-                code,
-                data.length
-        );
-
-        OutputStream output =
-                exchange.getResponseBody();
-
-        output.write(data);
-        output.close();
-    }
-
-    // Product class
-    static class Product {
-
-        int id;
-        String name;
-        String description;
-        double price;
-        int stock;
-        String image;
-
-        Product(
-                int id,
-                String name,
-                String description,
-                double price,
-                int stock,
-                String image) {
-
-            this.id = id;
-            this.name = name;
-            this.description = description;
-            this.price = price;
-            this.stock = stock;
-            this.image = image;
-        }
-
-        String toJson() {
-
-            return "{"
-                    + "\"id\":" + id + ","
-                    + "\"name\":\"" + escape(name) + "\","
-                    + "\"description\":\""
-                    + escape(description) + "\","
-                    + "\"price\":" + price + ","
-                    + "\"stock\":" + stock + ","
-                    + "\"image\":\""
-                    + escape(image) + "\""
-                    + "}";
-        }
-    }
-
-    static class CartItem {
-
-        Product product;
-        int quantity;
-
-        CartItem(
-                Product product,
-                int quantity) {
-
-            this.product = product;
-            this.quantity = quantity;
-        }
-
-        String toJson() {
-
-            return "{"
-                    + "\"productId\":"
-                    + product.id + ","
-                    + "\"name\":\""
-                    + escape(product.name) + "\","
-                    + "\"price\":"
-                    + product.price + ","
-                    + "\"quantity\":"
-                    + quantity
-                    + "}";
-        }
-    }
-
-    static String escape(String text) {
-
-        return text
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"");
-    }
-}
-
-
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-    <title>JRA SHOPS</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-
-<body>
-
-<header>
-
-    <h1>JRA SHOPS</h1>
-
-    <nav>
-        <a href="index.html">Home</a>
-        <a href="products.html">Products</a>
-        <a href="admin.html">Sell Product</a>
-        <a href="cart.html">Cart</a>
-    </nav>
-
-</header>
-
-<section class="hero">
-
-    <h2>Welcome to JRA SHOPS</h2>
-
-    <p>
-        Your trusted online shopping store
-    </p>
-
-    <a href="products.html">
-        <button>Shop Now</button>
-    </a>
-
-</section>
-
-<footer>
-    © 2026 JRA SHOPS
-</footer>
-
-</body>
-
-</html>
-
-
-<!DOCTYPE html>
-<html>
-
-<head>
-
-    <title>Products - JRA SHOPS</title>
-
-    <link rel="stylesheet" href="style.css">
-
-</head>
-
-<body>
-
-<header>
-
-    <h1>JRA SHOPS</h1>
-
-    <nav>
-
-        <a href="index.html">
-            Home
-        </a>
-
-        <a href="products.html">
-            Products
-        </a>
-
-        <a href="admin.html">
-            Sell Product
-        </a>
-
-        <a href="cart.html">
-            Cart
-        </a>
-
-    </nav>
-
-</header>
-
-<h2 class="title">
-    Our Products
-</h2>
-
-<div id="products"
-     class="products">
-
-    Loading products...
-
-</div>
-
-<script>
-
-async function loadProducts() {
-
-    const response =
-        await fetch(
-            "http://localhost:8080/api/products"
-        );
-
-    const products =
-        await response.json();
-
-    const container =
-        document.getElementById(
-            "products"
-        );
-
-    container.innerHTML = "";
-
-    products.forEach(product => {
-
-        container.innerHTML += `
-
-            <div class="card">
-
-                <img
-                    src="${product.image}"
-                    alt="${product.name}"
-                >
-
-                <h2>
-                    ${product.name}
-                </h2>
-
-                <p>
-                    ${product.description}
-                </p>
-
-                <h3>
-                    ₹${product.price}
-                </h3>
-
-                <p>
-                    Stock: ${product.stock}
-                </p>
-
-                <button
-                    onclick="addToCart(${product.id})">
-
-                    Add to Cart
-
-                </button>
-
-            </div>
-
-        `;
-    });
-}
-
-async function addToCart(id) {
-
-    const response =
-        await fetch(
-            "http://localhost:8080/api/cart",
-            {
-
-                method: "POST",
-
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
-
-                body: JSON.stringify({
-
-                    productId: id,
-
-                    quantity: 1
-
-                })
-
-            }
-        );
-
-    const result =
-        await response.json();
-
-    alert(result.message);
-}
-
-loadProducts();
-
-</script>
-
-</body>
-
-</html>
-
-
-<!DOCTYPE html>
-<html>
-
-<head>
-
-    <title>Sell Product - JRA SHOPS</title>
-
-    <link rel="stylesheet"
-          href="style.css">
-
-</head>
-
-<body>
-
-<header>
-
-    <h1>JRA SHOPS</h1>
-
-    <nav>
-
-        <a href="index.html">
-            Home
-        </a>
-
-        <a href="products.html">
-            Products
-        </a>
-
-        <a href="cart.html">
-            Cart
-        </a>
-
-    </nav>
-
-</header>
-
-<div class="form">
-
-    <h2>
-        Add Product for Sale
-    </h2>
-
-    <input
-        id="name"
-        placeholder="Product Name"
-    >
-
-    <textarea
-        id="description"
-        placeholder="Product Description">
-    </textarea>
-
-    <input
-        id="price"
-        type="number"
-        placeholder="Price ₹"
-    >
-
-    <input
-        id="stock"
-        type="number"
-        placeholder="Stock Quantity"
-    >
-
-    <input
-        id="image"
-        placeholder="Product Image URL"
-    >
-
-    <button onclick="addProduct()">
-        Publish Product
-    </button>
-
-</div>
-
-<script>
-
-async function addProduct() {
-
-    const product = {
-
-        name:
-            document.getElementById(
-                "name"
-            ).value,
-
-        description:
-            document.getElementById(
-                "description"
-            ).value,
-
-        price:
-            Number(
-                document.getElementById(
-                    "price"
-                ).value
-            ),
-
-        stock:
-            Number(
-                document.getElementById(
-                    "stock"
-                ).value
-            ),
-
-        image:
-            document.getElementById(
-                "image"
-            ).value
-    };
-
-    const response =
-        await fetch(
-            "http://localhost:8080/api/add-product",
-            {
-
-                method: "POST",
-
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
-
-                body:
-                    JSON.stringify(product)
-            }
-        );
-
-    const result =
-        await response.json();
-
-    alert(result.message);
-
-}
-
-</script>
-
-</body>
-
-</html>
-
-<!DOCTYPE html>
-<html>
-
-<head>
-
-    <title>Cart - JRA SHOPS</title>
-
-    <link rel="stylesheet"
-          href="style.css">
-
-</head>
-
-<body>
-
-<header>
-
-    <h1>JRA SHOPS</h1>
-
-    <nav>
-
-        <a href="index.html">
-            Home
-        </a>
-
-        <a href="products.html">
-            Products
-        </a>
-
-        <a href="cart.html">
-            Cart
-        </a>
-
-    </nav>
-
-</header>
-
-<div class="cart">
-
-    <h2>Your Shopping Cart</h2>
-
-    <div id="cartItems">
-        Loading...
-    </div>
-
-    <button onclick="placeOrder()">
-        Place Order
-    </button>
-
-</div>
-
-<script>
-
-async function loadCart() {
-
-    const response =
-        await fetch(
-            "http://localhost:8080/api/cart"
-        );
-
-    const cart =
-        await response.json();
-
-    const container =
-        document.getElementById(
-            "cartItems"
-        );
-
-    container.innerHTML = "";
-
-    if (cart.length === 0) {
-
-        container.innerHTML =
-            "<h3>Cart is empty</h3>";
-
-        return;
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JRA SHOPPING</title>
+  <style>
+    :root {
+      --primary: #1a73e8;
+      --success: #2ea44f;
+      --danger: #cb2431;
+      --bg: #f6f8fa;
+      --card-bg: #ffffff;
+      --text: #24292e;
     }
 
-    let total = 0;
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
 
-    cart.forEach(item => {
-
-        const amount =
-            item.price *
-            item.quantity;
-
-        total += amount;
-
-        container.innerHTML += `
-
-            <div class="cart-item">
-
-                <h3>
-                    ${item.name}
-                </h3>
-
-                <p>
-                    ₹${item.price}
-                </p>
-
-                <p>
-                    Quantity:
-                    ${item.quantity}
-                </p>
-
-                <p>
-                    Amount:
-                    ₹${amount}
-                </p>
-
-            </div>
-
-        `;
-
-    });
-
-    container.innerHTML += `
-
-        <h2>
-            Total: ₹${total}
-        </h2>
-
-    `;
-}
-
-async function placeOrder() {
-
-    const response =
-        await fetch(
-            "http://localhost:8080/api/order",
-            {
-                method: "POST"
-            }
-        );
-
-    const result =
-        await response.json();
-
-    alert(
-        result.message +
-        (
-            result.total
-                ? " Total: ₹" + result.total
-                : ""
-        )
-    );
-
-    loadCart();
-}
-
-loadCart();
-
-</script>
-
-</body>
-
-</html>
-
-
-* {
-    box-sizing: border-box;
-}
-
-body {
-    margin: 0;
-    font-family: Arial, sans-serif;
-    background: #f3f4f6;
-}
-
-header {
-    background: #111827;
-    color: white;
-    padding: 20px 7%;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-header h1 {
-    margin: 0;
-}
-
-nav a {
-    color: white;
-    text-decoration: none;
-    margin: 0 10px;
-}
-
-nav a:hover {
-    color: #38bdf8;
-}
-
-.hero {
-    text-align: center;
-    padding: 120px 20px;
-    background: white;
-}
-
-.hero h2 {
-    font-size: 45px;
-}
-
-.hero p {
-    font-size: 20px;
-}
-
-button {
-    background: #2563eb;
-    color: white;
-    border: none;
-    padding: 12px 22px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 16px;
-}
-
-button:hover {
-    background: #1d4ed8;
-}
-
-.title {
-    text-align: center;
-    margin: 40px;
-}
-
-.products {
-    display: grid;
-    grid-template-columns:
-        repeat(auto-fit, minmax(250px, 1fr));
-
-    gap: 25px;
-
-    padding: 30px;
-}
-
-.card {
-    background: white;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow:
-        0 2px 10px rgba(0,0,0,0.1);
-}
-
-.card img {
-    width: 100%;
-    height: 220px;
-    object-fit: contain;
-}
-
-.card h3 {
-    color: #2563eb;
-}
-
-.form {
-    max-width: 500px;
-    margin: 50px auto;
-    background: white;
-    padding: 30px;
-    border-radius: 10px;
-}
-
-.form input,
-.form textarea {
-    width: 100%;
-    padding: 12px;
-    margin: 10px 0;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-}
-
-.form textarea {
-    height: 100px;
-}
-
-.cart {
-    max-width: 800px;
-    margin: 50px auto;
-    background: white;
-    padding: 30px;
-    border-radius: 10px;
-}
-
-.cart-item {
-    border-bottom: 1px solid #ddd;
-    padding: 15px;
-}
-
-footer {
-    text-align: center;
-    background: #111827;
-    color: white;
-    padding: 25px;
-    margin-top: 50px;
-}
-
-@media (max-width: 700px) {
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
 
     header {
-        flex-direction: column;
-        gap: 15px;
+      background-color: #0f172a;
+      color: white;
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
 
-    nav {
-        margin-top: 10px;
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
     }
 
-    .hero h2 {
-        font-size: 32px;
+    .brand h1 {
+      font-size: 1.5rem;
+      letter-spacing: 1px;
+    }
+
+    .status-badge {
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-weight: bold;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+    }
+
+    .status-open {
+      background-color: #dcfce7;
+      color: #15803d;
+    }
+
+    .status-closed {
+      background-color: #fee2e2;
+      color: #b91c1c;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 2rem;
+    }
+
+    .products-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid #e1e4e8;
+      border-radius: 8px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .card img {
+      width: 100%;
+      height: 140px;
+      object-fit: cover;
+      border-radius: 4px;
+      margin-bottom: 0.75rem;
+    }
+
+    .card h3 {
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .card .price {
+      font-size: 1.2rem;
+      font-weight: bold;
+      color: var(--primary);
+      margin-bottom: 1rem;
+    }
+
+    button {
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      padding: 0.6rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    button:disabled {
+      background-color: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    .cart-section, .admin-section {
+      background: var(--card-bg);
+      border: 1px solid #e1e4e8;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .cart-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .cart-total {
+      margin-top: 1rem;
+      font-size: 1.25rem;
+      font-weight: bold;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .toggle-btn {
+      width: 100%;
+      padding: 0.75rem;
+      margin-top: 0.5rem;
+    }
+
+    .btn-open { background-color: var(--success); }
+    .btn-close { background-color: var(--danger); }
+
+    .banner-closed {
+      grid-column: 1 / -1;
+      background-color: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+      padding: 1rem;
+      border-radius: 8px;
+      text-align: center;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <h1>JRA SHOPPING</h1>
+    </div>
+    <div id="statusBadge" class="status-badge status-open">Store Open</div>
+  </header>
+
+  <div class="container">
+    <main>
+      <div id="closedNotice" class="banner-closed" style="display: none;">
+        🏬 <strong>JRA SHOPPING</strong> is currently closed. Ordering is unavailable.
+      </div>
+      <h2 style="margin-bottom: 1rem;">Products</h2>
+      <div class="products-grid" id="productList"></div>
+    </main>
+
+    <aside>
+      <div class="cart-section">
+        <h2>Your Cart</h2>
+        <div id="cartItems" style="margin-top: 1rem;"></div>
+        <div class="cart-total">
+          <span>Total:</span>
+          <span id="cartTotal">$0.00</span>
+        </div>
+        <button id="checkoutBtn" style="width: 100%; margin-top: 1rem;" onclick="checkout()">Checkout</button>
+      </div>
+
+      <div class="admin-section">
+        <h3>Store Admin Panel</h3>
+        <p style="font-size: 0.85rem; color: #666; margin-bottom: 0.75rem;">
+          Toggle operational status for JRA SHOPPING:
+        </p>
+        <button id="toggleStoreBtn" class="toggle-btn btn-close" onclick="toggleStoreStatus()">
+          Close Store
+        </button>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    let isStoreOpen = true;
+    let cart = {};
+
+    const products = [
+      { id: 1, name: "Wireless Headphones", price: 99.99, img: "https://picsum.photos/id/1/200/140" },
+      { id: 2, name: "Smart Watch", price: 149.50, img: "https://picsum.photos/id/2/200/140" },
+      { id: 3, name: "Mechanical Keyboard", price: 85.00, img: "https://picsum.photos/id/3/200/140" },
+      { id: 4, name: "Gaming Mouse", price: 45.25, img: "https://picsum.photos/id/4/200/140" }
+    ];
+
+    async function syncStoreStatus() {
+      try {
+        const response = await fetch('/api/status');
+        const data = await response.json();
+        isStoreOpen = data.isOpen;
+        updateUI();
+      } catch (err) {
+        console.warn("Server backend offline, using local state.");
+      }
+    }
+
+    function renderProducts() {
+      const container = document.getElementById("productList");
+      container.innerHTML = products.map(p => `
+        <div class="card">
+          <div>
+            <img src="${p.img}" alt="${p.name}">
+            <h3>${p.name}</h3>
+            <div class="price">$${p.price.toFixed(2)}</div>
+          </div>
+          <button 
+            onclick="addToCart(${p.id})" 
+            ${!isStoreOpen ? 'disabled' : ''}>
+            Add to Cart
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function addToCart(productId) {
+      if (!isStoreOpen) return;
+      cart[productId] = (cart[productId] || 0) + 1;
+      renderCart();
+    }
+
+    function renderCart() {
+      const cartContainer = document.getElementById("cartItems");
+      let total = 0;
+      let html = "";
+
+      const keys = Object.keys(cart);
+      if (keys.length === 0) {
+        cartContainer.innerHTML = "<p style='color: #888;'>Cart is empty.</p>";
+        document.getElementById("cartTotal").innerText = "$0.00";
+        return;
+      }
+
+      keys.forEach(id => {
+        const product = products.find(p => p.id == id);
+        const qty = cart[id];
+        const subtotal = product.price * qty;
+        total += subtotal;
+
+        html += `
+          <div class="cart-item">
+            <div>
+              <strong>${product.name}</strong><br>
+              <small>$${product.price.toFixed(2)} x ${qty}</small>
+            </div>
+            <div>
+              <strong>$${subtotal.toFixed(2)}</strong>
+            </div>
+          </div>
+        `;
+      });
+
+      cartContainer.innerHTML = html;
+      document.getElementById("cartTotal").innerText = `$${total.toFixed(2)}`;
+    }
+
+    function updateUI() {
+      const badge = document.getElementById("statusBadge");
+      const notice = document.getElementById("closedNotice");
+      const toggleBtn = document.getElementById("toggleStoreBtn");
+      const checkoutBtn = document.getElementById("checkoutBtn");
+
+      if (isStoreOpen) {
+        badge.innerText = "Store Open";
+        badge.className = "status-badge status-open";
+        notice.style.display = "none";
+        toggleBtn.innerText = "Close Store";
+        toggleBtn.className = "toggle-btn btn-close";
+        checkoutBtn.disabled = false;
+      } else {
+        badge.innerText = "Store Closed";
+        badge.className = "status-badge status-closed";
+        notice.style.display = "block";
+        toggleBtn.innerText = "Open Store";
+        toggleBtn.className = "toggle-btn btn-open";
+        checkoutBtn.disabled = true;
+      }
+
+      renderProducts();
+    }
+
+    async function toggleStoreStatus() {
+      try {
+        const response = await fetch('/api/toggle', { method: 'POST' });
+        const data = await response.json();
+        isStoreOpen = data.isOpen;
+      } catch (err) {
+        isStoreOpen = !isStoreOpen;
+      }
+      updateUI();
+    }
+
+    function checkout() {
+      if (!isStoreOpen) {
+        alert("JRA SHOPPING is currently closed.");
+        return;
+      }
+      if (Object.keys(cart).length === 0) {
+        alert("Your cart is empty!");
+        return;
+      }
+      alert("Thank you for shopping with JRA SHOPPING! Your order has been placed.");
+      cart = {};
+      renderCart();
+    }
+
+    // Initial Setup
+    syncStoreStatus();
+    renderProducts();
+    renderCart();
+  </script>
+</body>
+</html>
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+
+public class JraShoppingServer {
+
+    private static final int PORT = 8080;
+    private static boolean isStoreOpen = true;
+
+    public static void main(String[] args) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
+
+        // API & Static Resource Mapping
+        server.createContext("/", new StaticFileHandler());
+        server.createContext("/api/status", new StatusHandler());
+        server.createContext("/api/toggle", new ToggleHandler());
+
+        server.setExecutor(null);
+        System.out.println("=========================================");
+        System.out.println("  JRA SHOPPING SERVER RUNNING");
+        System.out.println("  Access URL: http://localhost:" + PORT);
+        System.out.println("=========================================");
+        server.start();
+    }
+
+    // Handler to serve index.html
+    static class StaticFileHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            File file = new File("index.html");
+            if (!file.exists()) {
+                String response = "404 Not Found: Ensure index.html is in the same directory.";
+                exchange.sendResponseHeaders(404, response.length());
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(response.getBytes());
+                }
+                return;
+            }
+
+            exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+            exchange.sendResponseHeaders(200, file.length());
+            try (FileInputStream fs = new FileInputStream(file);
+                 OutputStream os = exchange.getResponseBody()) {
+                byte[] buffer = new byte[1024];
+                int count;
+                while ((count = fs.read(buffer)) >= 0) {
+                    os.write(buffer, 0, count);
+                }
+            }
+        }
+    }
+
+    // Handler for fetching store state
+    static class StatusHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            String response = "{\"store\": \"JRA SHOPPING\", \"isOpen\": " + isStoreOpen + "}";
+            sendJsonResponse(exchange, 200, response);
+        }
+    }
+
+    // Handler for opening/closing store
+    static class ToggleHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                isStoreOpen = !isStoreOpen;
+                String response = "{\"message\": \"Store status updated\", \"isOpen\": " + isStoreOpen + "}";
+                sendJsonResponse(exchange, 200, response);
+            } else {
+                sendJsonResponse(exchange, 405, "{\"error\": \"Method not allowed. Use POST.\"}");
+            }
+        }
+    }
+
+    private static void sendJsonResponse(HttpExchange exchange, int statusCode, String response) throws IOException {
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+        exchange.sendResponseHeaders(statusCode, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(bytes);
+        }
     }
 }
